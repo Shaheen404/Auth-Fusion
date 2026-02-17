@@ -9,6 +9,7 @@ from auth_fusion.engine import (
     analyze_response,
     build_url,
     print_report,
+    replay_request,
     swap_token,
 )
 from auth_fusion.parser import ParsedRequest
@@ -142,3 +143,63 @@ class TestPrintReport:
         assert "200" in captured.out
         assert "YES" in captured.out
         assert "secret" in captured.out
+
+
+class TestReplayRequest:
+    """Tests for the replay_request function."""
+
+    @patch("auth_fusion.engine.requests.request")
+    def test_strips_accept_encoding_header(self, mock_request):
+        """Accept-Encoding from Burp must be removed so requests can manage it."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = '{"ok": true}'
+        mock_resp.headers = {"Content-Type": "application/json"}
+        mock_request.return_value = mock_resp
+
+        parsed = ParsedRequest(
+            method="GET",
+            path="/api/data",
+            headers={
+                "Host": "example.com",
+                "Authorization": "Bearer victim",
+                "Accept-Encoding": "gzip, deflate, br",
+            },
+            body=None,
+        )
+
+        replay_request(parsed, "attacker", "example.com")
+
+        sent_headers = mock_request.call_args.kwargs["headers"]
+        for key in sent_headers:
+            assert key.lower() != "accept-encoding"
+            assert key.lower() != "host"
+
+    @patch("auth_fusion.engine.requests.request")
+    def test_strips_content_length_header(self, mock_request):
+        """Content-Length from Burp must be removed so requests recalculates it."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = '{"ok": true}'
+        mock_resp.headers = {"Content-Type": "application/json"}
+        mock_request.return_value = mock_resp
+
+        parsed = ParsedRequest(
+            method="POST",
+            path="/api/data",
+            headers={
+                "Host": "example.com",
+                "Authorization": "Bearer victim",
+                "Content-Length": "999",
+                "Accept-Encoding": "gzip, deflate, br",
+            },
+            body='{"key": "value"}',
+        )
+
+        replay_request(parsed, "attacker", "example.com")
+
+        sent_headers = mock_request.call_args.kwargs["headers"]
+        lower_keys = {k.lower() for k in sent_headers}
+        assert "content-length" not in lower_keys
+        assert "accept-encoding" not in lower_keys
+        assert "host" not in lower_keys

@@ -6,7 +6,6 @@ Broken Object Level Authorization (BOLA) and Privilege Escalation.
 
 from __future__ import annotations
 
-import json
 import urllib3
 
 import requests

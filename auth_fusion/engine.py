@@ -123,9 +123,16 @@ def replay_request(
     """
     swapped_headers = swap_token(parsed.headers, attacker_token)
 
-    # Remove the Host header — requests will set it from the URL
+    # Remove headers that requests must manage itself.
+    # - Host: set automatically from the URL.
+    # - Accept-Encoding: let requests advertise only the encodings it can
+    #   decode (e.g. gzip, deflate, br when brotli is installed).  Forwarding
+    #   the original Burp header can cause the server to send an encoding
+    #   that the library cannot decompress, resulting in garbage output.
+    # - Content-Length: recalculated by requests from the actual body.
+    _hop_by_hop = {"host", "accept-encoding", "content-length"}
     for key in list(swapped_headers.keys()):
-        if key.lower() == "host":
+        if key.lower() in _hop_by_hop:
             del swapped_headers[key]
 
     url = build_url(target_host, parsed.path, use_https)
